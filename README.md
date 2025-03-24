@@ -20,6 +20,8 @@ The libraries used in this project are:
 - Data/ - This folder contains the data used in the project.
 - makefile - This file contains the commands to run the code within the project.
 - README.md - This file contains the overview, requirements, files, and how to reproduce the results of the project. (The file you are currently reading)
+- apa.csl - This file contains the citation style used in the project.
+- references.bib - This file contains the references used in the project.
 
 ## How to reproduce the results
 - To reproduce the results, you can run the code within the project using the command 'make' within the terminal.
