@@ -1,6 +1,6 @@
 # Define file names
-SRC = FinalProject.qmd
-OUTPUT_PDF = FinalProject.pdf
+SRC = FinalReport.qmd
+OUTPUT_PDF = FinalReport.pdf
 
 # Default target
 all: $(OUTPUT_PDF)

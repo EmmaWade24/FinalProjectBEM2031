@@ -1,0 +1,572 @@
+---
+title: "Employee Turnover Analysis"
+author: "Student Number - 720029134"
+subtitle: BEM2031 Introduction To Business Analytics - Final Report
+format: 
+  pdf:
+    toc: true
+    citation: true
+    csl: apa.csl
+    bibliography: references.bib    
+execute:
+    echo: false
+    warning: false
+    message: false
+    results: false
+header-includes:
+  - \usepackage{float}
+  - \usepackage[none]{hyphenat}  
+---
+
+\newpage
+
+**GenAI Statement**
+
+**Responsible and Ethical Use of GenAI Tools in the Business School**
+
+Within the Business School, we support the responsible and ethical use of GenAI tools, and we seek to develop your ability to use these tools to help you study and learn. An important part of this process is being transparent about how you have used GenAI tools during the preparation of your assignments.Information about GenAI can be found \[here\] and guidance on the responsible use of GenAI tools can be found \[here\]. The declaration below is intended to guide transparency in the use of GenAI tools and to assist you in ensuring the appropriate citation of those tools within your work.
+
+**GenAI Declaration**
+
+**I *have* used GenAI tools in the production of this work.**
+
+**The following GenAI tools have been used: *\[please specify\]* ChatGPT**\*
+
+**I have used GenAI tools for the following purposes:**
+
+-   [ ] I have used GenAI tools to assist with research or gathering information.\
+-   [ ] I have used GenAI tools to help me understand key theories and concepts.\
+-   [ ] I have used GenAI tools to help me analyse data.\
+-   [ ] I have used GenAI tools to create code.\
+-   [ ] I have used GenAI tools to suggest a plan or structure of my assessment.\
+-   \[Yes\] I have used GenAI tools to give me feedback on a draft.\
+-   [ ] I have used GenAI tools to generate images, figures, or diagrams.\
+-   [ ] I have used GenAI tools to generate creative content for my work.\
+-   [ ] I have used GenAI tools to proofread and correct grammar or spelling errors.\
+-   \[Yes\] **Other** *(please specify)* Debugging Code
+
+**Declaration of Citation**
+
+-   \[Yes\] I declare that I have referenced the use of GenAI tools and outputs within my assessment in line with the University guidelines for referencing GenAI in academic work.
+
+# 1. Analysis of Ghouzam's Report
+
+## 1.1 Business Understanding
+
+Ghouzam's report aimed to understand the reasons behind employees leaving a company, using historical human resources (HR) data to identify patterns in employee behaviour that might indicate dissatisfaction or disengagement. Employee turnover has significant impacts on businesses, especially when high-performing individuals leave unexpectedly [@Sajjadiani-2023]. This could cause financial, operational, and cultural costs [@Hancock-2013]. By analysing structured HR data, the project aimed to support the development of more effective retention strategies, making HR decision-making more proactive.
+
+The dataset consists of 15,000 individual employee records, each with ten features including both behavioural and employment-related metrics. These involve *satisfaction_level*, *last_evaluation*, *number_project*, *average_monthly_hours*, *time_spend_company*, *Work_accident*, *promotion_last_5years*, *sales*, *salary*, and the target variable *left*. These variables offer a good insight into internal drivers of employee turnover. The report applies a structured methodology, incorporating exploratory data analysis (EDA), clustering, and classification models like decision trees and random forests. These techniques uncover patterns in employee exits, including low satisfaction, extended working hours, and a lack of progression.
+
+However, while Ghouzam’s report is technically well-structured, it frames employee turnover as a narrow classification problem, with limited consideration of its real-world business application. The analysis does not address how the model’s outputs will be used by HR teams or what the potential risks and consequences of these predictions might be. It overlooks the broader organisational context and ethical considerations that should accompany predictive HR analytics.
+
+One of the key limitations is the assumption that internal HR data alone is sufficient to predict turnover. The model fails to incorporate external factors such as labour market competitiveness, macroeconomic pressures, or opportunities elsewhere, all of which are known to influence employee decisions [@Ayodele-2020]. Furthermore, the analysis does not distinguish between voluntary and involuntary turnover, an important distinction in HR strategy, as highlighted by @Maertz-2022. The lack of demographic variables also limits the depth of the analysis, since features like age, gender, and education are often essential for identifying key retention trends [@Trevor-2001].
+
+There are clear benefits to this type of analysis. It allows HR and leadership teams to intervene early, refine retention strategies, and better allocate resources. However, there are also risks. If misused, predictive analytics can result in unfair treatment or excessive monitoring. @Indarapu-2023 stress that a lack of algorithmic transparency can undermine employee trust, reiterating the importance of clear communication and ethical complicance in deploying such models.
+
+The outcomes of this analysis have implications for multiple stakeholders such as HR teams, line managers, and employees. When implemented accurately, it can improve engagement, reduce turnover, and support a more stable workforce. But to achieve these outcomes, the model must be continuously validated, contextually interpreted, and governed by ethical principles.
+
+
+```{python}
+import os
+import sys
+
+
+#Pre-processing
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.patches as mpatches
+
+from sklearn.metrics import (
+    confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc, brier_score_loss, log_loss, precision_recall_curve, classification_report, confusion_matrix
+)
+from sklearn.preprocessing import label_binarize, LabelEncoder, StandardScaler
+from sklearn.model_selection import train_test_split, StratifiedKFold, GridSearchCV
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from sklearn.preprocessing import MinMaxScaler
+import matplotlib.gridspec as gridspec
+
+# ML Models
+from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier, plot_importance
+
+
+import lime
+import lime.lime_tabular
+```
+
+## 1.2 Data Understanding
+
+```{python Data Prep}
+HR_data = pd.read_csv("Data/kaggle_hr_analytics.csv")
+HR_data.head()
+
+# Make sure left is categorical
+HR_data['left'] = HR_data['left'].astype('category')
+
+HR_data.isnull().sum().sum() # Shows no missing values
+
+# Determine if any duplicates
+duplicate_rows = HR_data[HR_data.duplicated()]
+num_duplicate_rows = duplicate_rows.shape[0] 
+
+# Remove Duplicates
+HR_data = HR_data.drop_duplicates()
+num_duplicate_rows = HR_data.duplicated().sum()
+
+# Label Encoding sales + salary
+# Initialize the LabelEncoder
+salary_encoder = LabelEncoder()
+sales_encoder = LabelEncoder()
+
+#Encode categorical
+HR_data['salary'] = salary_encoder.fit_transform(HR_data['salary'])
+HR_data['sales'] = sales_encoder.fit_transform(HR_data['sales'])
+
+# Create the mapping tables
+salary_mapping = pd.DataFrame({
+    'Encoded Value': range(len(salary_encoder.classes_)),
+    'Original Value': salary_encoder.classes_
+})
+
+sales_mapping = pd.DataFrame({
+    'Encoded Value': range(len(sales_encoder.classes_)),
+    'Original Value': sales_encoder.classes_
+})
+
+# Convert mapping tables to LaTeX format (escaping special characters)
+salary_mapping_latex = salary_mapping.to_latex(
+    index=False, 
+    caption="Salary Mapping", 
+    label="tab:salary_mapping",
+    column_format="ll",
+    escape=True  # Ensures LaTeX special characters are properly handled
+)
+
+sales_mapping_latex = sales_mapping.to_latex(
+    index=False, 
+    caption="Sales Mapping", 
+    label="tab:sales_mapping",
+    column_format="ll",
+    escape=True
+)
+
+# Make sure they centre and float
+sales_mapping_latex = sales_mapping_latex.replace("\\begin{table}", "\\begin{table}[H]\\centering")
+salary_mapping_latex = salary_mapping_latex.replace("\\begin{table}", "\\begin{table}[H]\\centering")
+
+# Ensure the Tables folder exists
+os.makedirs("Tables", exist_ok=True)
+
+# Save the LaTeX tables
+with open("Tables/salary_mapping.tex", "w") as f:
+    f.write(salary_mapping_latex)
+
+with open("Tables/sales_mapping.tex", "w") as f:
+    f.write(sales_mapping_latex)
+```
+
+```{python Split Data}
+# Split the data into test and train
+train_data, test_data = train_test_split(HR_data, test_size=0.2, random_state=123)
+# Prepare dataset
+X_train = train_data.drop(columns=['left'])
+y_train = train_data['left']
+X_test = test_data.drop(columns=['left'])
+y_test = test_data['left']
+
+# Add a constant term for intercept
+X_train_vif = sm.add_constant(X_train)
+
+# Calculate VIF for each feature
+vif_data = pd.DataFrame()
+vif_data["Feature"] = X_train_vif.columns
+vif_data["VIF"] = [variance_inflation_factor(X_train_vif.values, i) for i in range(X_train_vif.shape[1])]
+
+vif_data["VIF"] = vif_data["VIF"].astype(float).round(3).astype(str)
+
+# Drop the constant term from the VIF DataFrame
+vif_data = vif_data[vif_data["Feature"] != "const"]
+```
+
+The dataset used in Ghouzam’s paper is a reasonable representation of the factors that might influence an employee’s decision to leave the company. Variables such as *satisfaction_level*, *last_evaluation*, *average_monthly_hours*, and *number_project* provide valuable insight into key aspects like employee satisfaction, performance, and workload. However, with only three categorical levels, the *salary* variable lacks sufficient detail and limits its relevance in the analysis. Furthermore, the dataset does not differentiate between voluntary and involuntary turnover—an important omission that restricts the organisation’s ability to derive meaningful insights into employee turnover [@Maertz-2022]. Additionally, the absence of demographic data may reduce the effectiveness of the analysis, as these features often help discover meaningful patterns in employee turnover [@Trevor-2001]. Including variables such as age, gender, and educational background could improve both the accuracy and interpretability of the model. Moreover, incorporating external factors such as labour market trends, economic conditions, and competitor compensation offers could enhance the model’s predictive power by accounting for influences beyond the internal work environment. @Ayodele-2020 provide evidence that these factors have a significant relationship with employee turnover.
+
+The analysis presented in the report effectively utilised visualisations to explore key patterns in the data. For example, the radar chart provided a concise summary of the mean differences between employees who stayed and those who left. This visualisation highlighted satisfaction level as the most prominent distinguishing factor, with departing employees generally reporting lower satisfaction. However, reliance on average values in radar plots can obscure important variation within the data, particularly among subgroups. This limitation is especially relevant given that employees might leave for different reasons, and aggregating the data in this way may hide meaningful variations in reasons for employee turnover.
+
+To explore underlying patterns in the dataset, dimensionality reduction techniques such as Principal Component Analysis (PCA) and Isomap were applied. PCA did not reveal clear separation between employees who stayed and those who left, which is likely due to its limitation in capturing non-linear relationships. In contrast, the Isomap projection was more effective in highlighting distinct groupings within the data, suggesting that different types of employees may have left due to a combination of reasons rather than a single dominant factor. However, the target variable (*left*) was not removed prior to conducting PCA and Isomap, which may have introduced label bias into the visualisations. Consequently, this could have exaggerated the distinction between the two groups, potentially resulting in misleading interpretations of the underlying structure.
+
+This finding was further reinforced by the KMeans clustering analysis, which identified three distinct subgroups among employees who left the company. The first group included high-performing but overworked individuals who, despite receiving strong evaluations and handling heavy workloads, still chose to leave. The second cluster looked at employees who were both dissatisfied and underperforming, suggesting possible issues with motivation, role fit, or engagement. The third group consisted of employees who reported high satisfaction and strong performance yet still exited the organisation—potentially due to external opportunities or a lack of perceived growth within the company. This type of segmentation highlights the importance of recognising variation within the workforce, as employee turnover is rarely driven by a single cause. Research suggests that segmenting employees based on performance, engagement, or experience can significantly improve the impact of HR interventions and help prevent employee turnover [@Kwon-2013].
+
+The radar plots were then revisited using these clusters, visualising the differences between each group. This made the analysis much more compelling and actionable, since it can be used to suggest specific solutions for each type of employee. For example, overworked employees might benefit from workload management, while disengaged employees might need better support or clearer progression paths.
+
+While the dataset lacks depth in key areas like employee motivation, external influences, and demographics, the analysis makes good use of the data available. The visualisations, especially when combined with clustering, go beyond surface-level summaries and start to build a deeper understanding of the problem. However, to advance the analysis further, the dataset would need to be expanded. Including feedback data, such as survey responses or exit interviews, alongside contextual business information would support a more accurate understanding of why employees leave. Combining quantitative analysis with qualitative insights is often recommended, as it leads to a more holistic view of employee behaviour [@Shaw-2011].
+
+
+## 1.3 Data Preparation
+
+Ghouzam’s report demonstrates only a basic level of data preparation, overlooking several essential steps required for reliable modelling. Although no missing values were reported, the dataset contains a large number of duplicate rows, an important issue that was not identified or addressed. Duplicate entries can inflate model confidence and reduce generalisability. This is especially problematic when models are evaluated on datasets containing similar patterns, which may not reflect real-world variability. Recent research highlights that repetitive patterns in training data can contribute to overfitting and compromise a model’s ability to perform across varied contexts [@Kang-2025]. Addressing these data quality issues is essential for building trustworthy predictive models.
+
+Outlier detection was also missing from the analysis. While tree-based models such as decision trees and random forests are generally strong, they can still be affected by extreme values, particularly when those values represent non-representative or duplicated behaviour. For example, rare patterns in *average_monthy_hours* or *number_project* may cause unstable splits or introduce misleading decision thresholds. Studies have shown that handling such outliers improves model reliability and decision boundary consistency [@Marin_Diaz-2023].
+
+Feature scaling was correctly applied using standardisation, which is essential for algorithms like PCA and KMeans. However, feature selection lacked justification. All variables were included without assessing their individual predictive value, potential redundancy, or multicollinearity. Additionally, skewness in the feature distributions was not evaluated, and no transformations were applied to correct non-normal distributions.
+
+Interaction effects were also not investigated. These interactions could provide more insight than individual variables alone. In response, three interaction effect variables were created. An overall happiness index (*happy_idx*) combining *satisfaction_level* and *last_evaluation*. A burnout index (*burn_idx*), involving *number_project*, *time_spent_company* and *promotion_last_5years*. Finally, an overworked index (*over_idx*) showing interaction effects between *average_montly_hours*, *time_spend_company* and *average_montly_hours* was included.
+
+## 1.4 Modelling
+
+Ghouzam’s report relies on decision tree and random forest classifiers, both appropriate for binary classification and useful when model interpretability is important. However, the choice of models is not justified, and no alternatives are explored. Including a logistic regression model as a baseline would have provided a valuable point of comparison to assess whether the tree-based models offered a genuine improvement in performance.
+
+A more important concern is the lack of clarity around the evaluation strategy. The report does not specify how the data was split as there is no mention of a training/test ratio or whether stratified sampling was used. While 10-fold cross-validation is used, the absence of clear data partitioning raises the risk of data leakage and inflated performance estimates. Proper splitting is essential to ensure models generalise reliably beyond the training data [@Shafie-2024].
+
+The random forest model is reported to achieve 99% accuracy, which strongly indicates overfitting. Without context from precision, recall, or F1-score, especially in an imbalanced classification context, this figure is potentially misleading. High accuracy alone reflects the model’s bias toward predicting the majority class. Including a confusion matrix or class-wise performance metrics would have clarified how effectively the model captured actual leaving cases.
+
+The decision tree visualisation is a valuable inclusion, offering clear insight into how splits occur and highlighting key features such as *satisfaction_level* and *time_spent_company*. However, no comparable explanation is provided for the random forest. Given the complexity of ensemble models, incorporating interpretability tools such as Local Interpretable Model-Agnostic Explainations (LIME) or Shapley Additive Explainations (SHAP) would have improved transparency and supported more informed decision-making [@Thi_Hang-2024].
+
+## 1.5 Evaluation
+
+Currently, the project is not suitable for deployment. While the initial analysis offers useful insights into key drivers of employee turnover, several core limitations prevent it from being implemented in real-world HR settings. A key limitation is that the model has not been validated on unseen data. Without testing on external scenarios or real-world organisational settings, there is a high risk that the conclusions will not generalise, particularly in dynamic or department-specific contexts.
+
+While informative, the dataset has a limited scope. It excludes important features such as external labour market indicators, voluntary resignation reasons, and employee sentiment, which are often critical for understanding workforce dynamics and employee decision-making. However, without qualitative inputs like exit interviews or engagement surveys, the model lacks the depth to provide actionable insight beyond correlation. This limits its value for long-term strategic planning.
+
+The project correctly identifies key predictive features, but the model would benefit from clearer validation. Key metrics like precision, recall, and F1-score are missing, making it hard to evaluate performance on the minority class (employees who leave). There is no evidence of hyperparameter tuning or regularisation, both of which are essential for preventing overfitting. Fairness is also not addressed as no subgroup analysis was done to check for bias across roles or pay levels. As @Kochling-2020 emphasise, failing to assess fairness can reinforce existing organisational biases and lead to discriminatory outcomes.
+
+The visualisations were helpful in showing feature relevance and model logic but remained limited. They lacked temporal or comparative elements, such as time-series trends or benchmarks against industry norms, due to dataset constraints. These would be essential for contextualising insights and tracking changes over time. Model interpretability was also limited. While feature importance was shown, tools like LIME or SHAP were not used to explain individual predictions. Without clearer explanations, stakeholders may not be able to trust or act on the model’s outputs, reducing the likelihood of adoption. 
+
+## 1.6 Deployment
+
+While the model is not ready for application, there are several clear and achievable steps that could move it closer to operational use. The most immediate priority is planning its integration within existing HR systems. Currently, there is no deployment framework in place, with no API, dashboard, or defined output format tailored for HR teams. For the model to be impactful in practice, it must deliver insights in a format that is both accessible and actionable. A basic interactive dashboard, developed using tools like Streamlit or Power BI, could act as a front-end interface, highlighting individual employee exit risk alongside feature-level explanations. Risk scores could then be linked to suggested HR responses, such as initiating check-ins, offering internal mobility options, or reviewing workload levels for high-risk employees.
+
+A second major gap is the lack of a monitoring and retraining strategy. HR data evolves over time due to seasonal trends, policy changes, and broader economic conditions. Without a mechanism to track changes in data patterns and declining model performance, the model risks becoming outdated. Implementing a structured retraining process, supported by a clear Extract, Transform, Load (ETL) framework, would allow the model to adapt as new employee data becomes available. Key evaluation metrics such as F1-score, recall, and precision should be continuously tracked through a live dashboard to monitor ongoing performance. Retraining schedules could align with quarterly HR reviews, ensuring the model evolves with the organisation’s workforce and operational shifts.
+
+To support continued use, shifting toward a more prescriptive analytics approach is recommended. This would allow the system to not only identify employees at high risk of leaving but also suggest targeted interventions such as performance coaching, role redesign, flexible work arrangements, or proactive retention bonuses. Cluster analysis revealed distinct groups of leavers, suggesting that tailored strategies will be more effective than a one-size-fits-all solution. For example, overworked high performers may benefit from workload redistribution or project prioritisation, while disengaged underperformers could be offered clearer career development paths or mentoring opportunities, as highlighted in recent work on AI-supported HR practices [@Tambe-2019]. However, the effectiveness of such interventions depends on interpretability. Currently, the model does not include explanation tools like LIME or SHAP, which makes it difficult for HR teams to understand or act on individual predictions.
+
+Finally, ethical and regulatory considerations need to be addressed. The model does not incorporate fairness assessments or bias audits, and there is no reference to data privacy safeguards or General Data Protection Regulation (GDPR) compliance. These are particularly important when working with personal employee data in predictive systems [@Leicht-Deobald-2019]. A responsible deployment strategy should include bias reduction measures, subgroup performance analysis, and a governance framework to ensure transparency and compliance. HR leaders should also consider establishing cross-functional review teams to evaluate predictive outputs before any action is taken, ensuring that interventions are fair, context-aware, and aligned with organisational values.
+
+\newpage
+
+
+# 2. Improved Analysis - XGBoost Model
+
+```{python Interaction Effects}
+# Creating interaction effects
+from sklearn.preprocessing import MinMaxScaler
+
+
+# Features to scale
+index_features = [
+    'satisfaction_level', 'last_evaluation',
+    'average_montly_hours', 'number_project',
+    'time_spend_company', 'promotion_last_5years'
+]
+eng_features = ['satisfaction_level', 'last_evaluation', 'average_montly_hours']
+
+# --- TRAIN ---
+temp_train = X_train.copy()
+scaler = MinMaxScaler()
+temp_train[index_features] = scaler.fit_transform(temp_train[index_features])
+
+train_indices = pd.DataFrame(index=X_train.index)
+
+train_indices['happy_idx'] = temp_train[['satisfaction_level', 'promotion_last_5years']].mean(axis=1)
+
+train_indices['burn_idx'] = temp_train[['last_evaluation', 'average_montly_hours', 'satisfaction_level']].mean(axis=1)
+
+train_indices['over_idx'] = temp_train[['average_montly_hours', 'number_project', 'time_spend_company']].mean(axis=1)
+
+# --- TEST ---
+temp_test = X_test.copy()
+scaler = MinMaxScaler()
+temp_test[index_features] = scaler.fit_transform(temp_test[index_features])
+
+test_indices = pd.DataFrame(index=X_test.index)
+
+test_indices['happy_idx'] = temp_test[['satisfaction_level', 'promotion_last_5years']].mean(axis=1)
+
+test_indices['burn_idx'] = temp_test[['last_evaluation', 'average_montly_hours', 'satisfaction_level']].mean(axis=1)
+
+test_indices['over_idx'] = temp_test[['average_montly_hours', 'number_project', 'time_spend_company']].mean(axis=1)
+
+# --- Merge with original datasets
+X_train = X_train.join(train_indices)
+X_test = X_test.join(test_indices)
+```
+
+```{python XGB_training}
+# XGBoost using tuning and regularisation
+# Define the parameter grid for hyperparameter tuning
+param_grid = {
+    'n_estimators': [100, 200],
+    'max_depth': [3, 5, 7],
+    'learning_rate': [0.01, 0.1, 0.2],
+    'subsample': [0.8, 1.0],
+    'colsample_bytree': [0.8, 1.0],
+    'reg_alpha': [0, 0.1, 1],
+    'reg_lambda': [1, 1.5, 2]
+}
+
+# Initialize the XGBClassifier
+xgb = XGBClassifier(random_state=123)
+
+# Initialize GridSearchCV
+grid_search = GridSearchCV(estimator=xgb, param_grid=param_grid, cv=10, scoring='accuracy', n_jobs=-1, verbose=0)
+
+# Fit GridSearchCV
+grid_search.fit(X_train, y_train)
+
+# Get the best parameters and best estimator
+best_params = grid_search.best_params_
+best_xgb = grid_search.best_estimator_
+
+# Make Predictions
+xgb_predictions = best_xgb.predict(X_test)
+xgb_probabilities = best_xgb.predict_proba(X_test)[:, 1]  # Extract probability for positive class
+
+# Compute Confusion Matrix
+conf_matrix_xgb = confusion_matrix(y_test, xgb_predictions)
+
+# Compute Performance Metrics
+accuracyXGB = round(accuracy_score(y_test, xgb_predictions), 3)
+precisionXGB = round(precision_score(y_test, xgb_predictions), 3)
+recallXGB = round(recall_score(y_test, xgb_predictions), 3)
+f1_scoreXGB = round(f1_score(y_test, xgb_predictions), 3)
+
+# Compute ROC Curve and AUC Score
+fpr_xgb, tpr_xgb, _ = roc_curve(y_test, xgb_probabilities)
+auc_value_XGB = round(auc(fpr_xgb, tpr_xgb), 3)
+```
+
+When developing my own model, I focused on addressing the main limitations of the previously mentioned study using an XGBoost, an accurate ensemble model that has demonstrated strong performance in employee turnover prediction tasks [@Gomes-2025]. It offers a strong balance of accuracy and interpretability, especially when paired with LIME to visualise local feature contributions and F-scores to show global importance.
+
+For the data preparation, I completed all steps within Ghouzam's analysis. Also, duplicate observations were removed from the dataset so they have no impact on the model and the data was split into an 80-20 train/test split to reduce overfitting and allow evaluation on unseen data. Within my model, regularisation techniques were used to reduce overfitting and address class imbalance. Hyperparameter tuning is done using gridsearch to improve the performance of the model. Furthermore, I included more performance metrics; precision, recall, F1-score and area under the curve (AUC) to give a better evaluation of the model. Without these steps, it's difficult to trust any claims about model performance or business impact.
+
+```{python Performance Table}
+performance_df = pd.DataFrame({
+    "Metric": ["Accuracy", "Precision", "Recall", "F1-Score"],
+    "Scores" : [accuracyXGB, precisionXGB, recallXGB, f1_scoreXGB],
+})
+
+# Round values for better readability and format as strings for LaTeX output
+performance_df = performance_df.round(3).astype(str)
+
+# Convert the DataFrame to LaTeX format with appropriate formatting
+performance_latex = performance_df.to_latex(index=False,
+                                             caption="Performance Metrics for XGBoost Model",
+                                             label="Table 1 :performance_metrics",
+                                             column_format="lrrrrr",
+                                             escape=False)
+
+# Replace underscores with LaTeX-safe versions
+performance_latex = performance_latex.replace("AUC", "AUC")
+performance_latex = performance_latex.replace("\\begin{table}", "\\begin{table}[H]\\centering")
+
+# Ensure the directory exists
+os.makedirs("Tables", exist_ok=True)
+
+# Define the full file path
+file_path = os.path.join("Tables", "performance_latex.tex")
+
+# Save to a LaTeX file
+with open(file_path, "w") as f:
+    f.write(performance_latex)
+```
+
+\input{Tables/performance_latex.tex}
+
+```{python }
+#| label: fig-xgb-matrix
+#| fig-cap: "Confusion Matrix for XGBoost Model"
+
+# Convert Confusion Matrix to DataFrame for Visualization
+conf_df_xgb = pd.DataFrame(conf_matrix_xgb, index=["Stay", "Leave"],
+                           columns=["Stay", "Leave"])
+
+# Plot Confusion Matrix for XGBoost
+plt.rcParams.update({'font.size': 11})
+plt.figure(figsize=(8, 2))
+sns.heatmap(conf_df_xgb, annot=True, fmt="d", cmap="Blues", linewidths=0.5, cbar=False, annot_kws={"size": 24})
+plt.xlabel("Predicted Class")
+plt.ylabel("Actual Class")
+plt.show()
+
+TN = conf_df_xgb.iloc[0, 0]  # True Negatives (No Default correctly classified)
+FP = conf_df_xgb.iloc[0, 1]  # False Positives (Non-default misclassified as Default)
+FN = conf_df_xgb.iloc[1, 0]  # False Negatives (Default misclassified as Non-default)
+TP = conf_df_xgb.iloc[1, 1]  # True Positives (Default correctly classified)
+
+```
+
+\newpage
+
+```{python}
+#| label: fig-xgb-roc
+#| fig-cap: "ROC Curve for XGBoost Model"
+
+# Plot ROC Curve for XGBoost
+plt.rcParams.update({'font.size': 9})
+plt.figure(figsize=(8, 2.5))
+plt.plot(fpr_xgb, tpr_xgb, color="#08306b", linewidth=2, label=f"AUC: {auc_value_XGB}")
+plt.plot([0, 1], [0, 1], linestyle="--", color="black")  # Reference diagonal
+plt.xlabel("False Positive Rate (1 - Specificity)")
+plt.ylabel("True Positive Rate (Sensitivity)")
+plt.legend()
+plt.show()
+```
+
+The XGBoost model showed strong performance across all key evaluation metrics. On the test set, it achieved an accuracy of `{python} str(accuracyXGB *100)`, which already indicates that the majority of predictions were correct. However, looking beyond accuracy, the precision score of `{python} str(precisionXGB)` is very high. This means that when the XGBoost predicts a positive case, it is `{python} str(precisionXGB*100)`% likley to be correct. This is important in scenarios where false positives can waste resources.
+
+Recall was also high at `{python} str(recallXGB)`, which suggests the XGBoost is successfully identifying most of the actual positive cases. That being said, there were still `{python} str(FN)` false negatives, as seen in the confusion matrix (Figure 1). While this number is relatively small, it could still be a concern as leaving employees can have a financial impact on the company due to recruitment costs.
+
+Figure 2, the ROC curve, reiterates the XGBoost's exceptional classification ability. The AUC score of `{python} str(auc_value_XGB)` shows that the XGBoost is excellent at distinguishing between the two classes, even under different thresholds. This, combined with the F1 score of `{python} str(f1_scoreXGB)`, suggests that the XGBoost handles class balance well and is not overly biased toward the majority class. Despite the high performance metrics which traditionally could indicate potential overfitting, due to the implementation of L1 + L2 regularisation, a train/test split, and 10 cross-fold validation, these metrics can be trusted allowing this model to be deployed within a HR environment for employee exit decisions.
+
+Figure 3 shows how LIME can enhance transparency by breaking down the individual contribution of features in a specific observation. Within this observation, the XGBoost predicted with 95% certainty that the employee would leave, driven by the overworked index being above 0.43, not having a work accident, having a high burnout index above 0.66, and a high time spent at the company (\>4 years). Conversely, salary being high or medium, and average monthly hours being between 199 and 234 are important factors when predicting someone to stay at the company. 
+
+The significant role of interaction effects highlights the importance of including them in Ghouzam's report to ensure a more accurate and reliable analysis. However, LIME explains only one observation which is why feature importance is essential. While Ghouzam's project correctly incorporates feature importance, the analysis could be strengthened by including the F-score to quantify importance, rather than relying solely on relative values.
+
+```{python}
+#| label: fig-xgb-LIME
+#| fig-cap: "LIME for XGBoost Model"
+plt.rcParams.update({'font.size': 32})
+
+# === Initialise the LIME explainer ===
+explainer = lime.lime_tabular.LimeTabularExplainer(
+    training_data=np.array(X_train),
+    feature_names=X_train.columns,
+    class_names=['Stay', 'Leave'],
+    mode='classification'
+)
+
+# === Select a random "Leave" instance ===
+np.random.seed(51)
+left_instances = X_test[y_test == 1]
+instance_idx = np.random.randint(0, len(left_instances))
+instance = left_instances.iloc[instance_idx]
+
+# === Generate LIME explanation ===
+explanation = explainer.explain_instance(
+    data_row=instance.values,
+    predict_fn=best_xgb.predict_proba
+)
+
+# === Extract bar data (labels + contributions) ===
+bar_data = explanation.as_list()
+axis_labels = [label for label, _ in bar_data]
+contributions = [weight for _, weight in bar_data]
+colors = ['#08306b' if c < 0 else '#90b6cf' for c in contributions]
+
+# === Retrieve actual feature values using raw column names ===
+feature_values = {
+    X_train.columns[idx]: instance.iloc[idx]
+    for idx, _ in explanation.local_exp[1]
+}
+
+# Format numeric display
+int_features = ['promotion_last_5years', 'salary', 'Work_accident',
+                'sales', 'average_montly_hours', 'number_project', 'time_spend_company']
+for k in int_features:
+    if k in feature_values:
+        feature_values[k] = int(feature_values[k])
+
+# === Prediction Probabilities ===
+pred_probs = dict(zip(['Stay', 'Leave'], best_xgb.predict_proba([instance.values])[0]))
+
+# === Plot Layout ===
+fig = plt.figure(figsize=(36, 12))  # Widen overall layout
+gs = gridspec.GridSpec(1, 3, width_ratios=[3.6, 1.2, 2.5])  # Widen LIME, narrow left, widen table
+
+# --- Middle (now first): LIME bar chart ---
+ax1 = plt.subplot(gs[0])
+ax1.barh(axis_labels, contributions, color=colors)
+ax1.axvline(0, color='black', linewidth=0.5)
+ax1.set_title('LIME Explanation for Leave Prediction', fontsize = 34)
+ax1.set_xlabel('Feature Contribution')
+ax1.invert_yaxis()
+
+xlim = ax1.get_xlim()
+ylim = ax1.get_ylim()
+y_annot = ylim[0]
+ax1.text(xlim[0] * 0.98, y_annot, 'Stay',
+         color='#08306b', fontsize=36, ha='left', va='bottom', fontweight='bold')
+ax1.text(xlim[1] * 0.98, y_annot, 'Leave',
+         color='#90b6cf', fontsize=36, ha='right', va='bottom', fontweight='bold')
+
+# --- Left: Prediction Probabilities ---
+ax0 = plt.subplot(gs[1])
+ax0.barh(['Stay', 'Leave'], [pred_probs['Stay'], pred_probs['Leave']],
+         color=['#08306b', '#90b6cf'])
+ax0.set_xlim(0, 1)
+ax0.set_title('Prediction Probabilities')
+for i, (k, v) in enumerate(pred_probs.items()):
+    ax0.text(0.4, i, f'{v:.2f}', va='center')
+ax0.invert_yaxis()
+ax0.set_aspect(0.5)
+
+
+# --- Right: Feature Value Table ---
+ax2 = plt.subplot(gs[2])
+
+# Data prep
+table_data = [[k, f'{v}' if k in int_features else f'{v:.2f}']
+              for k, v in feature_values.items()]
+
+# Add title ABOVE table
+ax2.axis('off')
+ax2.set_title('Feature Values for the Instance', fontsize=34, pad=20)
+
+# Render table slightly lower in axis space using bbox
+table = ax2.table(
+    cellText=table_data,
+    colLabels=['Feature', 'Value'],
+    colWidths=[1, 0.4],
+    cellLoc='left',
+    bbox=[0, 0, 1, 1]  # [x, y, width, height]
+)
+
+table.auto_set_font_size(False)
+table.set_fontsize(28)
+table.scale(1.9, 2.1)
+
+plt.tight_layout()
+plt.show()
+
+
+```
+
+```{python}
+#| label: fig-xgb-featureImp
+#| fig-cap: "Feature Importance for XGBoost Model"
+
+# Get raw importance values
+importance_df = best_xgb.get_booster().get_score(importance_type='weight')
+importance_df = pd.DataFrame({
+    'Feature': list(importance_df.keys()),
+    'F-Score': list(importance_df.values())
+}).sort_values(by='F-Score', ascending=False)
+
+# Plot
+plt.figure(figsize=(10, 4))
+sns.barplot(
+    x='F-Score', 
+    y='Feature', 
+    data=importance_df, 
+    palette='Blues_d'
+)
+
+# Add labels and styling
+plt.xlabel('F-Score (Split Frequency)', fontsize=12)
+plt.ylabel('Features', fontsize=12)
+plt.xticks(fontsize=10)
+plt.yticks(fontsize=10)
+plt.tight_layout()
+plt.show()
+```
+
+Figure 4 shows global feature importance based on XGBoost’s F-score, which counts how often each feature is used to split the data across all trees in the XGBoost. High F-scores for *satisfaction_level*, *average_montly_hours*, and *last_evalulation* indicate these features are frequently used in decision rules, suggesting strong individual predictive power. The engineered features *over_idx* and *burn_idx* rank highly, confirming their added value as a standalone inputs. Interestingly, *Work_accident* ranks as the least important feature in Figure 4 whereas it is shown to be the third most influential predictor in Figure 3. This confirms that people will leave the company for different reasons and highlights the need for global feature importance. 
+
+This analysis could be used by the company to proactively identify at-risk employees who exhibit similar patterns. For example, those who are highly tenured and under-recognised (e.g. no recent promotion), and showing signs of burnout despite strong performance. HR interventions such as role reassessment, workload balancing, or wellbeing initiatives could be targeted based on the specific drivers of turnover uncovered in individual cases. While the model performs well overall, future analysis should explore subgroup performance to ensure fairness. For instance, analysing precision and recall across salary bands or tenure levels may reveal disparities that impact HR decision-making.
+
+[Link to Github Repository = BEM2031 Introduction To Business Analytics](https://github.com/EmmaWade24/FinalProjectBEM2031)
+
+# 3. References
