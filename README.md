@@ -22,6 +22,8 @@ The libraries used in this project are:
 - makefile - This file contains the commands to run the code within the project.
 - FinalReport.qmd - This file contains the code used in the project.
 - FinalReport.pdf - This file contains the output of the code used in the project.
+- apa.csl - Contains the referencing style used
+- references.bib - Contains the references used
 - Data/ - This folder contains the data used in the project.
 - Tables/ - This folder contains the tables generated in the project. 
 
